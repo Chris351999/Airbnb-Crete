@@ -1,0 +1,322 @@
+---
+title: "Airbnb analysis in Crete, Greece"
+author: "Fakontis Christos"
+date: "2025-02-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This report analyzes Airbnb listings in Crete, Greece including price distribution, availability, and location trends.
+
+```{r Introduction}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(readr)
+```
+
+### Load Airbnb dataset
+
+Firstly, I loaded the Airbnb dataset, converted the date column to a date format and then cleaned the price column by removing symbols and converting it to numeric.
+
+```{r load 1}
+
+airbnb_calendar <- read.csv("/Users/christosfacondis/Downloads/calendar.csv")
+airbnb_calendar$date<- as.Date(airbnb_calendar$date, format="%Y-%m-%d")
+airbnb_calendar$price <- as.numeric(gsub("[$€,]", "", airbnb_calendar$price))
+str(airbnb_calendar) 
+summary(airbnb_calendar)
+```
+
+In this dataset i converted some columns into factor.
+
+```{r load 2}
+
+airbnb_listings = read.csv("/Users/christosfacondis/Downloads/listings.csv")
+airbnb_listings$neighbourhood <- as.factor(airbnb_listings$neighbourhood)
+airbnb_listings$room_type <- as.factor(airbnb_listings$room_type)
+str(airbnb_listings) 
+summary(airbnb_listings)
+```
+
+```{r load 3}
+
+airbnb_neighbourhoods = read.csv("/Users/christosfacondis/Downloads/neighbourhoods.csv")
+str(airbnb_neighbourhoods) 
+summary(airbnb_neighbourhoods)
+```
+
+```{r load 4}
+airbnb_reviews = read.csv("/Users/christosfacondis/Downloads/reviews.csv")
+str(airbnb_reviews) 
+summary(airbnb_reviews)
+```
+
+### Question 1: Which part of Crete has the most Airbnbs?
+
+I began by organising the listings data by neighbourhood to identify the areas with the most listings. I then created a plot to visualise the neighbourhoods with the most Airbnb listings.
+
+```{r Question 1a}
+neighbourhood_density =   airbnb_listings %>%
+  group_by(neighbourhood) %>%
+  summarise(total_listings = n()) %>%
+  arrange(desc(total_listings))
+head(neighbourhood_density)
+```
+
+```{r Question1b Plot}
+ggplot(neighbourhood_density[1:10, ], aes(x=reorder(neighbourhood, total_listings), y=total_listings)) +
+  geom_bar(stat="identity", fill="skyblue", alpha=0.8) + 
+  coord_flip() +  
+  labs(title="Top 10 Neighbourhoods with Most Airbnb Listings",
+       x="Neighbourhood", y="Number of Listings") +
+  theme_minimal() +  
+  theme(axis.text.x = element_text(size=12), 
+        axis.text.y = element_text(size=12),
+        plot.title = element_text(size=14, face="bold"))
+```
+
+### Question 2: What is the mean price for each neighbourhood?
+
+Firstly, i cleaned my data from NAs,zeros and not finite values. Then, I grouped the prices of the listings by neighbourhood. I then requested the following aggregations (mean, median, standard deviation, size) for each neighbourhood. Finally, I sorted the calculated data by median in descending order beacuse Airbnb prices don't follow a normal distribution.
+
+```{r Question 2}
+
+sum(is.na(airbnb_listings$price))  
+sum(is.nan(airbnb_listings$price)) 
+sum(is.infinite(airbnb_listings$price)) 
+sum(airbnb_listings$price <= 0, na.rm=TRUE) 
+
+airbnb_listings<- airbnb_listings %>%
+  mutate(price = as.numeric(price)) %>% 
+  filter(!is.na(price) & !is.nan(price) & is.finite(price) & price > 0)  
+
+
+prices_by_neighbourhood <- airbnb_listings %>%
+  group_by(neighbourhood) %>%
+  summarise(
+    mean_price = mean(price, na.rm = TRUE),
+    median_price = median(price, na.rm = TRUE),
+    sd_price = sd(price, na.rm = TRUE),
+    total_listings = n()
+  ) %>%
+  arrange(desc(median_price)) 
+
+head(prices_by_neighbourhood, 10)
+```
+
+I selected the top 10 most expensive neighbourhoods and created a dot-and-line plot. I plotted the median price in red and the mean price in blue, connecting them with a dashed gray line.
+
+```{r Question 2b}
+
+expensive_neighbourhoods <- prices_by_neighbourhood[1:10, ]
+
+# Create a dot + line plot with both median and mean prices
+ggplot(expensive_neighbourhoods, aes(x=reorder(neighbourhood, median_price))) +
+  geom_point(aes(y=median_price), color="red", size=5, alpha=0.8) +  
+  geom_point(aes(y=mean_price), color="blue", size=5, alpha=0.8) +   
+  geom_segment(aes(y=median_price, yend=mean_price, xend=neighbourhood), color="gray", linetype="dashed") + # Line connecting mean and median
+  coord_flip() +  # Flip for better readability
+  labs(title="Top 10 Neighbourhoods by Airbnb Price (Median vs Mean)",
+       subtitle="Red = Median Price | Blue = Mean Price",
+       x="Neighbourhood",
+       y="Price") +
+  theme_minimal() + 
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        plot.title = element_text(size=14, face="bold"),
+        plot.subtitle = element_text(size=12, face="italic"))
+
+```
+
+### Question 3: Histogram of Airbnb Prices in Crete with Mean and Median Lines
+
+I aimed to visualize the distribution of Airbnb listing prices in Crete by creating a histogram that displays the frequency of different price amounts while also including reference lines for the mean and median prices.
+
+```{r Question 3}
+
+airbnb_listings <- airbnb_listings %>%
+  mutate(price = as.numeric(price)) %>%  # Convert to numeric
+  filter(!is.na(price) & !is.nan(price) & is.finite(price) & price > 0) 
+
+ggplot(airbnb_listings, aes(x=price)) +
+  geom_histogram(binwidth=10, fill="navy", color="black", alpha=0.7) +  
+  geom_vline(aes(xintercept=mean(price, na.rm=TRUE)), color="red", linetype="solid", size=1.2) +  
+  geom_vline(aes(xintercept=median(price, na.rm=TRUE)), color="black", linetype="solid", size=1.2) +  
+  scale_x_continuous(limits = c(0, quantile(airbnb_listings$price, 0.95, na.rm=TRUE)), breaks=seq(0, max(airbnb_listings$price, na.rm=TRUE), by=100)) +  # Limit x-axis to remove extreme outliers
+  labs(title="Histogram of Airbnb Prices in Greece",
+       x="Price Amounts", y="Frequency",
+       subtitle="Red Line = Mean Price | Black Line = Median Price") +
+  theme_minimal() +  # Clean and modern theme
+  theme(axis.text.x = element_text(size=12),
+        axis.text.y = element_text(size=12),
+        plot.title = element_text(size=14, face="bold"),
+        plot.subtitle = element_text(size=12, face="italic"))
+
+```
+
+###Question 3b Average price per Date
+
+I calculated the average price per date by grouping the data by date and computing the mean price. Then, I created a line plot, where the average price. I formatted the x-axis to display monthly date labels.
+
+```{r Question 3b}
+ avg_price_per_date <- airbnb_calendar %>%
+  group_by(date) %>%
+  summarise(AvgPrice = mean(price, na.rm=TRUE)) %>%
+  arrange(date)
+
+ggplot(avg_price_per_date, aes(x = as.Date(date), y = AvgPrice)) +
+  geom_line(color="blue", size=1) 
+  labs(title = "Average Price Per Date",
+       x = "Date",
+       y = "Average Price (€)") +
+  theme_minimal() +  # Clean and modern theme
+  theme(axis.text.x = element_text(size=12, angle=45, hjust=1),  # Rotate x-axis labels
+        axis.text.y = element_text(size=12),
+        plot.title = element_text(size=14, face="bold")) +
+  scale_x_date(date_labels = "%b %d", date_breaks = "1 month")  
+```
+
+### Question 4: Availability per Day
+
+I aimed to analyze and visualize the availability of Airbnb listings per day by filtering and counting available listings, grouping them by date, and plotting the results. When plotting this available, i observe that the most available listings can be found May to October.
+
+```{r Question 4}
+availability_per_date <- airbnb_calendar %>%
+  filter(available == 't') %>%  # Keep only available listings
+  group_by(date) %>%  # Group by date
+  summarise(no_listings_available = n()) %>%  # Count available listings per day
+  arrange(date)  # Sort by date
+
+ggplot(availability_per_date, aes(x = as.Date(date), y = no_listings_available)) +
+  geom_line(color="blue", size=1) +  # Line plot with blue color
+  labs(title = "Available Listings per Date",
+       x = "Date",
+       y = "Number of Available Listings") +
+  theme_minimal() 
+```
+
+### Question 5: Histogram of Number of Reviews per Listing
+
+I aimed to analyze and visualize the distribution of reviews per Airbnb listing in Crete by creating a histogram that displays the frequency of different review counts while also including reference lines for the mean and median.
+
+```{r Question 5}
+mean_reviews <- mean(airbnb_listings$number_of_reviews, na.rm=TRUE)
+median_reviews <- median(airbnb_listings$number_of_reviews, na.rm=TRUE)
+
+ggplot(airbnb_listings, aes(x=number_of_reviews)) +
+  geom_histogram(bins=200, fill="navy", color="black", alpha=0.7) +  
+  geom_vline(aes(xintercept=mean_reviews), color="red", linewidth=1.2) +  
+  geom_vline(aes(xintercept=median_reviews), color="black", linewidth=1.2) +  
+  scale_x_continuous(limits=c(0,90), breaks=seq(0, 90, 10)) +  
+  labs(title="Histogram of Number of Reviews per listing",
+       x="Review Amounts",
+       y="Frequency") +
+  theme_minimal() +  
+  theme(plot.title = element_text(size=14, face="bold"),
+        axis.title.x = element_text(size=12, face="bold"),
+        axis.title.y = element_text(size=12, face="bold"),
+        axis.text.x = element_text(angle=45, hjust=1)) +  
+  guides(fill="none") + 
+  annotate("text", x=mean_reviews, y=max(table(airbnb_listings$number_of_reviews)), label="Mean", color="red", hjust=-0.2) +
+  annotate("text", x=median_reviews, y=max(table(airbnb_listings$number_of_reviews))-10, label="Median", color="black", hjust=-0.2)
+```
+
+### Question 6: Distribution of Airbnb Room Types in Crete
+
+I analyzed the distribution of different Airbnb room types in Crete to understand how prices vary and how common each room type is. I used a bar plot, violin plot, and frequency analysis to explore these insights.
+
+```{r Question 6}
+
+df_room_type <- airbnb_listings %>%
+  group_by(room_type) %>%
+  summarise(no_listings_per_room_type = n()) %>%
+  arrange(desc(no_listings_per_room_type))
+
+total_listings <- sum(df_room_type$no_listings_per_room_type)
+df_room_type <- df_room_type %>%
+  mutate(percentage = round((no_listings_per_room_type / total_listings) * 100, 2))
+
+df_room_type$percentage <- paste0(df_room_type$percentage, "%")
+
+print(df_room_type)
+
+ggplot(df_room_type, aes(x=reorder(room_type, -no_listings_per_room_type), 
+                         y=no_listings_per_room_type, 
+                         fill=room_type)) +
+  geom_bar(stat="identity", alpha=0.8) + 
+  geom_text(aes(label=percentage), vjust=-0.5, size=2) +  
+  labs(title="Number of Listings per Room Type",
+       x="Room Type",
+       y="Number of Listings") +
+  theme_minimal() +  # Clean theme
+  theme(axis.text.x = element_text(size=10),
+        axis.text.y = element_text(size=10),
+        plot.title = element_text(size=10, face="bold")) +
+  scale_fill_manual(values=c("#FFB6C1", "#ADD8E6", "#FFDDC1", "#C1E1C1")) 
+
+
+listings <- airbnb_listings %>%
+  mutate(price = as.numeric(price)) %>%
+  filter(!is.na(price) & price > 0 & price < quantile(price, 0.95, na.rm=TRUE)) 
+
+ggplot(listings, aes(x=room_type, y=price, fill=room_type)) +
+  geom_violin(alpha=0.7, trim=FALSE, color="black") +  # Violin plot with border
+  geom_boxplot(width=0.1, fill="white", alpha=0.5, outlier.shape=NA) +  
+  labs(title="Price Distribution by Room Type",
+       x="Room Type",
+       y="Price") +
+  theme_minimal() +  
+  theme(axis.text.x = element_text(size=12, angle=45, hjust=1),  
+        axis.text.y = element_text(size=12),
+        plot.title = element_text(size=14, face="bold")) +
+  scale_fill_manual(values=c("#FFB6C1", "#ADD8E6", "#FFDDC1", "#C1E1C1")) 
+```
+
+### Question 7:Interactive Map of Airbnb Listings in Crete
+
+I aimed to analyze and visualize the geographic distribution of Airbnb listings in Crete using an interactive map. This map allows users to explore locations dynamically, view listing details, and see how room types are distributed geographically.
+
+```{r Question 7}
+library(leaflet)
+library(RColorBrewer)
+
+room_colors <- colorFactor(
+  palette = c("red", "blue", "green", "purple"),  
+  domain = airbnb_listings$room_type)
+
+  leaflet(airbnb_listings) %>%
+  addTiles() %>% 
+  addCircleMarkers(
+    ~longitude, ~latitude, 
+    color = ~room_colors(room_type),  
+    radius = 3, opacity = 0.7, fillOpacity = 0.5,
+    popup = ~paste("<b>Room Type:</b>", room_type, 
+                   "<br><b>Price:</b>", price, "€",
+                   "<br><b>Reviews:</b>", number_of_reviews)
+  ) %>%
+  addLegend("bottomright", 
+            pal = room_colors, values = ~room_type, 
+            title = "Room Type")
+ 
+
+
+```
+
+### Question 8: Listings per host
+
+In this question, i have checked out how many listings are per host.
+
+```{r Question 8}
+listings_per_host <- airbnb_listings %>%
+  group_by(host_id, host_name) %>%
+  summarise(no_of_listings = n()) %>%
+  arrange(desc(no_of_listings))
+
+head(listings_per_host)
+```
